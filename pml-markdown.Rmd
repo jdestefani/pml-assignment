@@ -1,0 +1,174 @@
+---
+title: "Barbell lift quality prediction"
+author: "J.De Stefani"
+date: "26/04/2015"
+output: html_document
+---
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+library(caret)
+library(randomForest)
+
+setwd("~/workspace/OnlineCourses//PracticalMachineLearning");
+rawTrainingData <- read.csv("pml-training.csv");
+testData <- read.csv("pml-testing.csv");
+```
+
+You can also embed plots, for example:
+
+```{r, echo=FALSE}
+plot1 <- qplot(rawTrainingData$user_name,rawTrainingData$X,colour=rawTrainingData$classe, xlab="User name", ylab="Observation Index")
+plot1 + labs(colour="Classe") + labs(title="Observation distribution per user and class")
+```
+
+## Preprocessing ##
+
+```{r}
+# Find all the columns containing missing values (i.e. Na, "", "#DIV/0!")
+missingValues <- sapply(rawTrainingData, function(x){x=="" || x=="#DIV/0!" || is.na(x)})
+rawTrainingData[missingValues] <- NA
+
+# Remove all the columns with a prevalence of NA values
+missingValuesColumns <- ( grepl(glob2rx("^kurtosis*"),names(rawTrainingData)) 
+                          | grepl(glob2rx("^skewness*"),names(rawTrainingData)) 
+                          | grepl(glob2rx("^kurtosis*"),names(rawTrainingData))
+                          | grepl(glob2rx("^avg*"),names(rawTrainingData))
+                          | grepl(glob2rx("^var*"),names(rawTrainingData))
+                          | grepl(glob2rx("^stddev*"),names(rawTrainingData))
+                          | grepl(glob2rx("^max*"),names(rawTrainingData))
+                          | grepl(glob2rx("^min*"),names(rawTrainingData))
+                          | grepl(glob2rx("^amplitude*"),names(rawTrainingData)))
+
+trainingData <- rawTrainingData[,!missingValuesColumns]
+
+#Remove columns containing indexing information for the subjects
+trainingData <- trainingData[,8:dim(trainingData)[2]]
+
+```
+
+## Model Fitting ##
+
+### LDA, Naive Bayes, GBM, Tree Bag ###
+
+```{r,eval=FALSE}
+inTrainingN <- createDataPartition(y=trainingData$classe,p=.8,list=F)
+trainingN <- trainingData[inTrainingN,]
+testingN <- trainingData[-inTrainingN,]
+
+set.seed(17711771)
+
+# 3 x 10-fold CV
+fitControl <- trainControl(method = "repeatedcv", number = 10,  repeats = 3)
+
+## Set up parallel processing 
+cluster <- makeCluster(detectCores()-1)
+registerDoParallel(cluster)
+
+modelLDA <- train(trainingN$classe~., data=trainingN,method="lda", trControl = fitControl, allowParallel=T)
+modelNB <- train(trainingN$classe~., data=trainingN,method="nb",trControl = fitControl,allowParallel=T)
+bagTree <- train(trainingN$classe~., data=trainingN,method="treebag",allowParallel=T)
+modelGBM <- train(trainingN$classe~., data=trainingN, method = "gbm",trControl = fitControl, allowParallel=T)
+
+## turn off parallel processing
+stopCluster(cluster)
+
+# Prediction computations
+predictionsLDA <- predict(modelLDA,newdata=testingN)
+resultsLDA <- confusionMatrix(predictionsLDA,testingN$classe)
+
+predictionsNB <- predict(modelNB,newdata=testingN)
+resultsNB <- confusionMatrix(predictionsNB,testingN$classe)
+
+predictionsBag <- predict(bagTree,newdata=testingN)
+resultsBag <- confusionMatrix(predictionsBag,testingN$classe)
+
+predictionsGBM <- predict(modelGBM,newdata=testingN)
+resultsGBM <- confusionMatrix(modelGBM,testingN$classe)
+```
+
+
+
+### Random Forest ###
+```{r,eval=FALSE}
+# Split training-test set - Random Forest
+inTrainingF <- createDataPartition(y=trainingData$classe,p=.6,list=F)
+trainingF <- trainingData[inTrainingF,]
+testingF <- trainingData[-inTrainingF,]
+
+set.seed(17711771)
+
+## Set up parallel processing - Random forest generation
+cluster <- makeCluster(detectCores()-1)
+registerDoParallel(cluster)
+
+forest50 <- randomForest(trainingF$classe~., data=trainingF,ntree=50,importance=T,proximity=T,oob.prox=T,allowParallel=T)
+
+## turn off parallel processing
+stopCluster(cluster)
+
+predictions <- predict(forest50,newdata=testingF)
+results <- confusionMatrix(predictions,testingF$classe)
+accuracy <- results$overall[1]
+
+testData <- read.csv("pml-testing.csv");
+predictionsFinal <- predict(forest50,newdata=testData)
+```
+
+```{r,echo=FALSE}
+setwd("~/workspace/OnlineCourses//PracticalMachineLearning");
+inTrainingF <- createDataPartition(y=trainingData$classe,p=.6,list=F)
+trainingF <- trainingData[inTrainingF,]
+testingF <- trainingData[-inTrainingF,]
+
+inTrainingN <- createDataPartition(y=trainingData$classe,p=.8,list=F)
+trainingN <- trainingData[inTrainingN,]
+testingN <- trainingData[-inTrainingN,]
+
+set.seed(17711771)
+
+modelRF <- readRDS("master/RandomForest50.rds")
+predictionsRF <- predict(modelRF,newdata=testingN)
+resultsRF <- confusionMatrix(predictionsRF,testingN$classe)
+
+modelLDA <- readRDS("master/modelLDA.rds")
+predictionsLDA <- predict(modelLDA,newdata=testingN)
+resultsLDA <- confusionMatrix(predictionsLDA,testingN$classe)
+
+modelNB <- readRDS("master/modelNB.rds")
+predictionsNB <- predict(modelNB,newdata=testingN)
+resultsNB <- confusionMatrix(predictionsNB,testingN$classe)
+
+bagTree <- readRDS("master/treebagModel.rds")
+predictionsBag <- predict(bagTree,newdata=testingN)
+resultsBag <- confusionMatrix(predictionsBag,testingN$classe)
+
+modelGBM <- readRDS("master/modelGBM.rds")
+predictionsGBM <- predict(modelGBM,newdata=testingN)
+resultsGBM <- confusionMatrix(predictionsGBM,testingN$classe)
+
+resultsDataFrame <- as.data.frame(rbind(resultsRF$overall,resultsLDA$overall,resultsNB$overall,resultsBag$overall,resultsGBM$overall))
+rownames(resultsDataFrame) <- c("RF50","LDA","NB","treebag","GBM")
+
+library(gridExtra)
+grid.table(resultsDataFrame[,1:5])
+```
+
+```{r,echo=FALSE}
+confusionMatrixPlot = function(confusionTable){
+  require(ggplot2)
+  
+  confusion <- as.data.frame(sweep(confusionTable, 2, colSums(confusionTable), FUN="/"))
+  
+  plot <- ggplot(confusion)
+  plot + geom_tile(aes(x=Prediction, y=Reference, fill=Freq)) + scale_x_discrete(name="Actual Class") + scale_y_discrete(name="Predicted Class") + scale_fill_gradient(breaks=seq(from=0, to=1, by=.02),low="white",high="darkgreen") + labs(fill="Normalized\nFrequency") + theme(legend.key.height=unit(3,"cm")) + labs(title="Normalized confusion matrix")
+  
+  confusionTable
+}
+
+confusionMatrixPlot(resultsRF$table)
+```
+
