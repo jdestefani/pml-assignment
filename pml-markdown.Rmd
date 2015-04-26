@@ -138,10 +138,6 @@ modelLDA <- readRDS("master/modelLDA.rds")
 predictionsLDA <- predict(modelLDA,newdata=testingN)
 resultsLDA <- confusionMatrix(predictionsLDA,testingN$classe)
 
-modelNB <- readRDS("master/modelNB.rds")
-predictionsNB <- predict(modelNB,newdata=testingN)
-resultsNB <- confusionMatrix(predictionsNB,testingN$classe)
-
 bagTree <- readRDS("master/treebagModel.rds")
 predictionsBag <- predict(bagTree,newdata=testingN)
 resultsBag <- confusionMatrix(predictionsBag,testingN$classe)
@@ -150,25 +146,27 @@ modelGBM <- readRDS("master/modelGBM.rds")
 predictionsGBM <- predict(modelGBM,newdata=testingN)
 resultsGBM <- confusionMatrix(predictionsGBM,testingN$classe)
 
-resultsDataFrame <- as.data.frame(rbind(resultsRF$overall,resultsLDA$overall,resultsNB$overall,resultsBag$overall,resultsGBM$overall))
-rownames(resultsDataFrame) <- c("RF50","LDA","NB","treebag","GBM")
+resultsDataFrame <- as.data.frame(rbind(resultsRF$overall,resultsLDA$overall,resultsBag$overall,resultsGBM$overall))
+rownames(resultsDataFrame) <- c("RF50","LDA","treebag","GBM")
 
-library(gridExtra)
-grid.table(resultsDataFrame[,1:5])
+resultsDataFrame[,1:5]
 ```
 
 ```{r,echo=FALSE}
-confusionMatrixPlot = function(confusionTable){
-  require(ggplot2)
-  
-  confusion <- as.data.frame(sweep(confusionTable, 2, colSums(confusionTable), FUN="/"))
-  
-  plot <- ggplot(confusion)
-  plot + geom_tile(aes(x=Prediction, y=Reference, fill=Freq)) + scale_x_discrete(name="Actual Class") + scale_y_discrete(name="Predicted Class") + scale_fill_gradient(breaks=seq(from=0, to=1, by=.02),low="white",high="darkgreen") + labs(fill="Normalized\nFrequency") + theme(legend.key.height=unit(3,"cm")) + labs(title="Normalized confusion matrix")
-  
-  confusionTable
-}
+library(ggplot2)
+library(grid)
+#modelRF <- readRDS("master/RandomForest50.rds")
+predictionsRF <- predict(modelRF,newdata=testingN)
+resultsRF <- confusionMatrix(predictionsRF,testingN$classe)
 
-confusionMatrixPlot(resultsRF$table)
+confusionTable <- resultsRF$table
+  
+confusion <- as.data.frame(sweep(confusionTable, 2, colSums(confusionTable), FUN="/"))
+  
+plot <- ggplot(confusion)
+plot + geom_tile(aes(x=Prediction, y=Reference, fill=Freq)) + scale_x_discrete(name="Actual Class") + scale_y_discrete(name="Predicted Class") + scale_fill_gradient(breaks=seq(from=0, to=1, by=.05),low="white",high="darkgreen") + labs(fill="Normalized\nFrequency") + theme(legend.key.height=unit(2,"cm")) + labs(title="Normalized confusion matrix")
+  
+confusionTable
+
 ```
 
